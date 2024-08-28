@@ -1,0 +1,12 @@
+﻿  _tmain.cpp
+E:\VS_Code\Ring3_Inject\Ring3_Inject\PeHelper.h(66,17): warning C4018: “<”: 有符号/无符号不匹配
+  (编译源文件“_tmain.cpp”)
+  
+E:\VS_Code\Ring3_Inject\Ring3_Inject\ProcessHelper.h(20,13): warning C4477: “wprintf”: 格式字符串“%s”需要类型“wchar_t *”的参数，但可变参数 1 拥有了类型“DWORD”
+  (编译源文件“_tmain.cpp”)
+  
+E:\VS_Code\Ring3_Inject\Ring3_Inject\ProcessHelper.h(28,13): warning C4477: “wprintf”: 格式字符串“%s”需要类型“wchar_t *”的参数，但可变参数 1 拥有了类型“DWORD”
+  (编译源文件“_tmain.cpp”)
+  
+E:\VS_Code\Ring3_Inject\Ring3_Inject\_tmain.cpp(171,20): warning C4018: “<”: 有符号/无符号不匹配
+  Ring3_Inject.vcxproj -> E:\VS_Code\Ring3_Inject\Debug\Ring3_Inject.exe

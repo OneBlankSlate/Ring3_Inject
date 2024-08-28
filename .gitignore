@@ -1,0 +1,26 @@
+# system ignore
+.DS_Store
+node_modules/
+#package file
+*.war
+*.ear
+*.zip
+*.tar.gz
+*.rar
+##uniapp
+unpackage/
+# Editor directories and files
+.idea/
+.vscode/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+
+
+
+
+
+
+
+
