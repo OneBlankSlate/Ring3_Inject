@@ -21,6 +21,7 @@ x64/
 [Dd]ebug/
 Debug/*.tlog/
 Release/*.tlog/
+Debug/
 
 
 
