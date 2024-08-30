@@ -19,8 +19,8 @@
 x64/
 [Rr]elease/
 [Dd]ebug/
-Debug/Dll.tlog/
-Release/Dll.tlog/
+Debug/*.tlog/
+Release/*.tlog/
 
 
 
