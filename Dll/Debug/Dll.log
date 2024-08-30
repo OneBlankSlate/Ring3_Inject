@@ -1,7 +1,0 @@
-﻿  pch.cpp
-  dllmain.cpp
-E:\VS_Code\Ring3_Inject\Dll\dllmain.cpp(29,21): warning C4477: “swprintf_s”: 格式字符串“%d”需要类型“int”的参数，但可变参数 1 拥有了类型“HANDLE”
-  (编译源文件“/dllmain.cpp”)
-  
-    正在创建库 E:\VS_Code\Ring3_Inject\Debug\Dll.lib 和对象 E:\VS_Code\Ring3_Inject\Debug\Dll.exp
-  Dll.vcxproj -> E:\VS_Code\Ring3_Inject\Debug\Dll.dll
