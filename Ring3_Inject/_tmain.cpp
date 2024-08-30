@@ -1,10 +1,8 @@
 #include"_tmain.h"
+ 
 
-#ifdef UNICODE
-LPFN_LOADLIBRARYW LoadLibrary_Pointer = NULL;
-#else
-LPFN_LOADLIBRARYA LoadLibrary_Pointer = NULL;
-#endif
+
+
 int _tmain(int argc,char* argv[],char* envp[])
 {
 	inject(argv[1], argv[2], L"E:\\VS_Code\\Ring3_Inject\\Debug\\Dll.dll");
@@ -31,8 +29,11 @@ void inject(char* ImageName,char* flag,const wchar_t* DllPath)
 		set_window_hookex_inject(process_handle, process_id, DllPath);
 		break;
 	case REGISTER_INJECT:
-	{
 		register_inject(DllPath);     //最好不要测试该方法
+		break;
+	case MODIFY_IMPORT_TABLE_INJECT:
+	{
+		modify_import_table_inject(process_handle, process_id, DllPath,_T("Sub_1"));
 		break;
 	}
 	}
@@ -40,6 +41,12 @@ void inject(char* ImageName,char* flag,const wchar_t* DllPath)
 
 void apc_inject(HANDLE ProcessHandle, DWORD ProcessIdentity, const wchar_t* DllPath)
 {
+#ifdef UNICODE
+	LPFN_LOADLIBRARYW LoadLibrary_Pointer = (LPFN_LOADLIBRARYW)_PE_HELPER_::get_remote_proc_address(ProcessIdentity, ProcessHandle, "kernel32.dll", "LoadLibraryW");
+#else
+	LPFN_LOADLIBRARYA LoadLibrary_Pointer = (LPFN_LOADLIBRARYA)_PE_HELPER_::get_remote_proc_address(ProcessIdentity, ProcessHandle, "kernel32.dll", "LoadLibraryA");
+#endif
+
 	LPVOID virtual_address = NULL;
 	int last_error = 0;
 	std::vector<DWORD> thread_identity{};
@@ -63,11 +70,6 @@ void apc_inject(HANDLE ProcessHandle, DWORD ProcessIdentity, const wchar_t* DllP
 	{
 		goto Exit;
 	}
-#ifdef UNICODE
-	LoadLibrary_Pointer = (LPFN_LOADLIBRARYW)_PE_HELPER_::get_remote_proc_address(ProcessIdentity, ProcessHandle, "kernel32.dll", "LoadLibraryW");
-#else
-	LoadLibrary_Pointer = (LPFN_LOADLIBRARYA)_PE_HELPER_::get_remote_proc_address(ProcessIdentity, ProcessHandle, "kernel32.dll", "LoadLibraryA");
-#endif
 	if (LoadLibrary_Pointer == NULL) {
 		goto Exit;
 	}
@@ -119,9 +121,9 @@ void hook_eip_inject(HANDLE ProcessHandle, DWORD ProcessIdentity, const wchar_t*
 	memcpy(dll_address_in_shell, DllPath, (_tcslen(DllPath) + 1) * 2);  //将Dll完整路径存入目标进程空间中   
 	*(PULONG)(__ShellCode + 3) = (ULONG_PTR)virtual_address + 29;     	//Push Address 
 #ifdef UNICODE
-	LoadLibrary_Pointer = (LPFN_LOADLIBRARYW)_PE_HELPER_::get_remote_proc_address(ProcessIdentity, ProcessHandle, "kernel32.dll", "LoadLibraryW");
+	LPFN_LOADLIBRARYW LoadLibrary_Pointer = (LPFN_LOADLIBRARYW)_PE_HELPER_::get_remote_proc_address(ProcessIdentity, ProcessHandle, "kernel32.dll", "LoadLibraryW");
 #else
-	LoadLibrary_Pointer = (LPFN_LOADLIBRARYA)_PE_HELPER_::get_remote_proc_address(ProcessIdentity, ProcessHandle, "kernel32.dll", "LoadLibraryA");
+	LPFN_LOADLIBRARYW LoadLibrary_Pointer = (LPFN_LOADLIBRARYA)_PE_HELPER_::get_remote_proc_address(ProcessIdentity, ProcessHandle, "kernel32.dll", "LoadLibraryA");
 #endif
 	*(PULONG)(__ShellCode + 25) = (ULONG)LoadLibrary_Pointer;   //当前exe模块中的导入函数
 	*(PULONG_PTR)(__ShellCode + 9) = (ULONG_PTR)virtual_address + 25;
@@ -233,6 +235,96 @@ BOOL register_inject(const wchar_t* DllPath)
 Exit:
 	if (key_handle)  RegCloseKey(key_handle);
 	return isok;
+}
+ULONG  find_image_base_address_by_peb(HANDLE ProcessHandle)
+{
+	//获取目标进程中的PE结构信息进而得到exe映像地址ImageBaseAddress（这里使用ZwQueryInformationProcess而不是暴力搜索去匹配MEM_IMAGE)
+	HMODULE module_handle = GetModuleHandleA("ntdll.dll");
+	LPFN_NtQueryInformationProcess NtQueryInformationProcess_Pointer = (LPFN_NtQueryInformationProcess)GetProcAddress(module_handle, "NtQueryInformationProcess");
+	ULONG ReturnLength = 0;
+	PROCESS_BASIC_INFORMATION* pbasic_info =new PROCESS_BASIC_INFORMATION();
+	NtQueryInformationProcess_Pointer(ProcessHandle, ProcessBasicInformation, pbasic_info, sizeof(PROCESS_BASIC_INFORMATION), &ReturnLength);
+	DWORD peb_base_address = (DWORD)pbasic_info->PebBaseAddress;
+	PPEB pPeb = new PEB();
+	BOOL ret = ReadProcessMemory(ProcessHandle,(LPCVOID)peb_base_address,pPeb,sizeof(PEB),0);
+	if (!ret) return 0;
+	ULONG_PTR image_base_address = (ULONG_PTR)pPeb->ImageBaseAddress;
+	return image_base_address;
+}
+
+NTSTATUS modify_import_table_inject(HANDLE ProcessHandle, DWORD ProcessIdentity, const wchar_t* DllPath, const TCHAR* DLLExportFunc)
+{
+	ULONG image_base_address = find_image_base_address_by_peb(ProcessHandle);
+	PBYTE lpBuffer = new BYTE[BUFFER_SIZE];
+	BOOL ret = ReadProcessMemory(ProcessHandle,(LPCVOID)image_base_address, lpBuffer,BUFFER_SIZE,0);
+	PIMAGE_DOS_HEADER dos_header;
+	PIMAGE_NT_HEADERS nt_headers;
+	PIMAGE_FILE_HEADER file_header;
+	PIMAGE_OPTIONAL_HEADER optional_header;
+	PIMAGE_IMPORT_BY_NAME import_by_name;
+	PIMAGE_IMPORT_DESCRIPTOR original_import_descriptor, new_import_descriptor;
+	ULONG import_table_rva, import_table_size;
+	ULONG new_import_table_va, new_import_table_size;
+	PBYTE pbuf = NULL, pthunk_data = NULL;
+	ULONG old_protect;
+	NTSTATUS status;
+	ULONG address_to_change_protect = NULL;
+	ULONG size_to_change_protect = 0;
+	ULONG total_image_size = 0;
+	ULONG aligned_header_size = 0;
+	if (image_base_address == 0)   return STATUS_INVALID_PARAMETER;
+	dos_header = (PIMAGE_DOS_HEADER)lpBuffer;
+	if (dos_header->e_magic != 0x5A4D)   return FALSE;          //MZ
+	nt_headers = (PIMAGE_NT_HEADERS)((PBYTE)lpBuffer + dos_header->e_lfanew);
+	if (nt_headers->Signature != 0x00004550) return FALSE;
+	__try{
+		file_header = (PIMAGE_FILE_HEADER)((PBYTE)lpBuffer + dos_header->e_lfanew + 4);
+		optional_header = (PIMAGE_OPTIONAL_HEADER)((BYTE*)file_header + sizeof(IMAGE_FILE_HEADER));
+		total_image_size = optional_header->SizeOfImage;  
+		import_table_rva = optional_header->DataDirectory[1].VirtualAddress;  
+		import_table_size = optional_header->DataDirectory[1].Size;
+		original_import_descriptor = (PIMAGE_IMPORT_DESCRIPTOR)((PBYTE)lpBuffer + import_table_rva);
+		new_import_table_size = import_table_size + sizeof(IMAGE_IMPORT_DESCRIPTOR);
+		aligned_header_size = ALIGN_UP_BY(optional_header->SizeOfHeaders, optional_header->SectionAlignment);  //利用PE头后面的一部分空间，Thunk数据有0x40大小就够了
+		pbuf = (PBYTE)((PBYTE)lpBuffer + aligned_header_size - new_import_table_size - 0x40);
+		address_to_change_protect = image_base_address;  
+		size_to_change_protect = aligned_header_size;
+		HMODULE ntdll_module_base = LoadLibrary(_T("Ntdll.DLL"));
+		if (ntdll_module_base == NULL) return FALSE;
+		LPFN_NtProtectVirtualMemory NtProtectVirtualMemory_Pointer = NULL;
+		NtProtectVirtualMemory_Pointer = (LPFN_NtProtectVirtualMemory)GetProcAddress(ntdll_module_base, "NtProtectVirtualMemory");
+		if (NtProtectVirtualMemory_Pointer == NULL) return FALSE;
+		status = NtProtectVirtualMemory_Pointer(ProcessHandle, (PVOID*)&address_to_change_protect, &size_to_change_protect, PAGE_EXECUTE_READWRITE, &old_protect);
+		if (NT_SUCCESS(status)){
+
+			memcpy(pbuf, original_import_descriptor, import_table_size);			//保存原始输入表
+			new_import_descriptor = (PIMAGE_IMPORT_DESCRIPTOR)(pbuf + import_table_size - sizeof(IMAGE_IMPORT_DESCRIPTOR));  //新的偏移位置，稍后填充,减去一个导入表描述的大小是因为IID数组以全0结构结束
+			pthunk_data = pbuf + new_import_table_size;		//构造Thunk等数据
+			memcpy((char*)(pthunk_data + 0x00), DllPath, (_tcslen(DllPath)+1)*2);   //从0x00处开始是DLL名称
+			import_by_name = (PIMAGE_IMPORT_BY_NAME)(pthunk_data + 0x20);			//在0x20处构造funcname
+			import_by_name->Hint = 0;    //按名称导入，这里直接填0即可
+			memcpy(import_by_name->Name, DLLExportFunc, (_tcslen(DLLExportFunc)+1)*sizeof(TCHAR));
+			*(ULONG*)(pthunk_data + 0x30) = (ULONG)pthunk_data + 0x20 - image_base_address;			//在0x30处构造OriginalFirstThunk，指向0x20处的IMAGE_IMPORT_BY_NAME
+			*(ULONG*)(pthunk_data + 0x38) = (ULONG)pthunk_data + 0x20 - image_base_address;			//0x38作为FirstThunk
+			new_import_descriptor->OriginalFirstThunk = (ULONG)pthunk_data + 0x30 - (ULONG)lpBuffer;			//填充自己的DLL输入项
+			new_import_descriptor->TimeDateStamp = 0;
+			new_import_descriptor->ForwarderChain = 0;
+			new_import_descriptor->Name = (ULONG)pthunk_data - (ULONG)lpBuffer;
+			new_import_descriptor->FirstThunk = (ULONG)pthunk_data + 0x38 - (ULONG)lpBuffer;
+			new_import_table_va = (ULONG)pbuf - (ULONG)lpBuffer;			//计算新的输入表偏移量
+			optional_header->DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT].VirtualAddress = new_import_table_va;			//修改数据
+			optional_header->DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT].Size = new_import_table_size;
+			//禁止绑定输入表
+			optional_header->DataDirectory[IMAGE_DIRECTORY_ENTRY_BOUND_IMPORT].VirtualAddress = 0;
+			optional_header->DataDirectory[IMAGE_DIRECTORY_ENTRY_BOUND_IMPORT].Size = 0;
+			if (WriteProcessMemory(ProcessHandle, (LPVOID)image_base_address, lpBuffer, total_image_size, 0)) 
+				return STATUS_SUCCESS;
+		}
+		else return status;
+	}
+	__except (EXCEPTION_EXECUTE_HANDLER){
+		return GetExceptionCode();
+	}
 }
 
 

@@ -16,6 +16,7 @@ unpackage/
 *.ntvs*
 *.njsproj
 *.sln
+*.vs
 
 
 
