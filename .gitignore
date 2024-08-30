@@ -17,6 +17,25 @@ unpackage/
 *.njsproj
 *.sln
 *.vs
+*.exp
+*.pdb
+*.log
+*.recipe
+*.ilk
+*.pch
+*.txt
+*.obj
+*.idb
+*.tlob
+*.iobj
+*.ipdb
+*.vcxproj
+*.user
+*.filters
+
+
+
+
 
 
 
