@@ -3,12 +3,12 @@
 
 
 
-int _tmain(int argc,char* argv[],char* envp[])
+int _tmain(int argc,TCHAR* argv[],TCHAR* envp[])
 {
-	inject(argv[1], argv[2], L"E:\\VS_Code\\Ring3_Inject\\Debug\\Dll.dll");
+	inject(argv[1], argv[2],argv[3]);  //目标进程名，注入方式，hackdll文件路径
 	return 0;
 }
-void inject(char* ImageName,char* flag,const wchar_t* DllPath)
+void inject(TCHAR* ImageName, TCHAR* flag,TCHAR* DllPath)
 {
 	int Flag;
 	_stscanf_s((const wchar_t*)flag, _T("%d"), &Flag);
@@ -39,7 +39,7 @@ void inject(char* ImageName,char* flag,const wchar_t* DllPath)
 	}
 }
 
-void apc_inject(HANDLE ProcessHandle, DWORD ProcessIdentity, const wchar_t* DllPath)
+void apc_inject(HANDLE ProcessHandle, DWORD ProcessIdentity, TCHAR* DllPath)
 {
 #ifdef UNICODE
 	LPFN_LOADLIBRARYW LoadLibrary_Pointer = (LPFN_LOADLIBRARYW)_PE_HELPER_::get_remote_proc_address(ProcessIdentity, ProcessHandle, "kernel32.dll", "LoadLibraryW");
@@ -52,12 +52,12 @@ void apc_inject(HANDLE ProcessHandle, DWORD ProcessIdentity, const wchar_t* DllP
 	std::vector<DWORD> thread_identity{};
 	HMODULE  kernel32_module_base = NULL;
 	HANDLE thread_handle = INVALID_HANDLE_VALUE;
-	virtual_address = VirtualAllocEx(ProcessHandle, NULL, (_tcslen(DllPath)+1)*2, MEM_COMMIT, PAGE_READWRITE);
+	virtual_address = VirtualAllocEx(ProcessHandle, NULL, (_tcslen(DllPath)+1)* sizeof(TCHAR), MEM_COMMIT, PAGE_READWRITE);
 	if (virtual_address == NULL){
 		last_error = GetLastError();
 		goto Exit;
 	}
-	if (WriteProcessMemory(ProcessHandle, virtual_address, DllPath, (_tcslen(DllPath) + 1) * 2, NULL) == FALSE){
+	if (WriteProcessMemory(ProcessHandle, virtual_address, DllPath, (_tcslen(DllPath) + 1) * sizeof(TCHAR), NULL) == FALSE){
 		last_error = GetLastError();
 		goto Exit;
 	}
@@ -88,21 +88,21 @@ Exit:
 	thread_identity.~vector();
 }
 
-void create_remote_thread(HANDLE ProcessHandle,DWORD ProcessIdentity, const wchar_t* DllPath){
+void create_remote_thread(HANDLE ProcessHandle,DWORD ProcessIdentity, TCHAR* DllPath){
 	void* _LoadLibrary_= _PE_HELPER_::get_remote_proc_address(ProcessIdentity, ProcessHandle, (char*)"kernel32.dll", (char*)"LoadLibraryW");
 	//2.在目标进程中申请空间
 	LPVOID base_address = VirtualAllocEx(ProcessHandle, NULL, 0x1000, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
 	//3.写入DLL路径
 	SIZE_T write_length = 0;
-	BOOL ret = WriteProcessMemory(ProcessHandle, base_address, DllPath, ((wcslen(DllPath) + 1) * 2), &write_length);
+	BOOL ret = WriteProcessMemory(ProcessHandle, base_address, DllPath, (_tcslen(DllPath) + 1) * sizeof(TCHAR), &write_length);
 	if (ret == FALSE){
 		MessageBox(NULL, _T("WriteProcessMemory failed!"), _T("Error"), MB_OK);
 		return;
 	}
 	HANDLE thread_handle=CreateRemoteThread(ProcessHandle, NULL, NULL, (LPTHREAD_START_ROUTINE)_LoadLibrary_, (LPVOID)base_address, NULL, NULL);
-
+	_gettchar();
 }
-void hook_eip_inject(HANDLE ProcessHandle, DWORD ProcessIdentity, const wchar_t* DllPath){
+void hook_eip_inject(HANDLE ProcessHandle, DWORD ProcessIdentity, TCHAR* DllPath){
 	CONTEXT	thread_context = { 0 };
 	int     last_error = 0;
 	PVOID   virtual_address = NULL;
@@ -110,7 +110,7 @@ void hook_eip_inject(HANDLE ProcessHandle, DWORD ProcessIdentity, const wchar_t*
 	HANDLE  thread_handle = NULL;
 	PUINT8	dll_address_in_shell = NULL;
 	_THREAD_HELPER_::get_thread_id(ProcessIdentity, thread_identity);   //得到目标进程的所有线程ID
-	if (_MEMORY_HELPER_::IsBadReadPtr(DllPath, (_tcslen(DllPath)+1)*2)){
+	if (_MEMORY_HELPER_::IsBadReadPtr(DllPath, (_tcslen(DllPath) + 1) * sizeof(TCHAR))){
 		release(virtual_address, thread_handle, ProcessHandle);
 	}
 	virtual_address = VirtualAllocEx(ProcessHandle, NULL,sizeof(__ShellCode), MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);  //目标进程空间申请内存
@@ -118,7 +118,7 @@ void hook_eip_inject(HANDLE ProcessHandle, DWORD ProcessIdentity, const wchar_t*
 		release(virtual_address, thread_handle, ProcessHandle);
 	}
 	dll_address_in_shell = __ShellCode + 29;
-	memcpy(dll_address_in_shell, DllPath, (_tcslen(DllPath) + 1) * 2);  //将Dll完整路径存入目标进程空间中   
+	memcpy(dll_address_in_shell, DllPath, (_tcslen(DllPath) + 1) * sizeof(TCHAR));  //将Dll完整路径存入目标进程空间中   
 	*(PULONG)(__ShellCode + 3) = (ULONG_PTR)virtual_address + 29;     	//Push Address 
 #ifdef UNICODE
 	LPFN_LOADLIBRARYW LoadLibrary_Pointer = (LPFN_LOADLIBRARYW)_PE_HELPER_::get_remote_proc_address(ProcessIdentity, ProcessHandle, "kernel32.dll", "LoadLibraryW");
@@ -149,7 +149,7 @@ void hook_eip_inject(HANDLE ProcessHandle, DWORD ProcessIdentity, const wchar_t*
 	_gettchar();
 }
 
-void set_window_hookex_inject(HANDLE ProcessHandle, DWORD ProcessIdentity, const wchar_t* DllPath)
+void set_window_hookex_inject(HANDLE ProcessHandle, DWORD ProcessIdentity, TCHAR* DllPath)
 {
 	int    last_error = 0;
 	std::vector<DWORD>   thread_identity;
@@ -160,7 +160,7 @@ void set_window_hookex_inject(HANDLE ProcessHandle, DWORD ProcessIdentity, const
 		last_error = GetLastError();
 		goto Exit;
 	}
-	module_base = LoadLibrary(DllPath);
+	module_base = LoadLibrary((LPCWSTR)DllPath);
 	if (module_base == NULL){
 		last_error = GetLastError();
 		goto Exit;
@@ -194,7 +194,7 @@ Exit:
 	}
 }
 
-BOOL register_inject(const wchar_t* DllPath)
+BOOL register_inject(TCHAR* DllPath)
 {
 	HKEY key_handle = NULL;
 	BYTE bufferdata[MAX_PATH] = { 0 };
@@ -217,7 +217,7 @@ BOOL register_inject(const wchar_t* DllPath)
 		goto Exit;
 	}
 	memcpy(bufferdata, DllPath, (_tcslen(DllPath) + 1) * sizeof(TCHAR));
-	isok = RegSetValueEx(key_handle, _T("AppInit_DLLs"), 0, REG_SZ, bufferdata, (_tcslen(DllPath) + 1));	//写入键值
+	isok = RegSetValueEx(key_handle, _T("AppInit_DLLs"), 0, REG_SZ, bufferdata, (_tcslen(DllPath) + 1) * sizeof(TCHAR));	//写入键值
 	/*
 		RegSetValueEx：设置指定值的数据和类型
 			HKEY hKey,				//已打开项的句柄
@@ -252,7 +252,7 @@ ULONG  find_image_base_address_by_peb(HANDLE ProcessHandle)
 	return image_base_address;
 }
 
-NTSTATUS modify_import_table_inject(HANDLE ProcessHandle, DWORD ProcessIdentity, const wchar_t* DllPath, const TCHAR* DLLExportFunc)
+NTSTATUS modify_import_table_inject(HANDLE ProcessHandle, DWORD ProcessIdentity, TCHAR* DllPath, const TCHAR* DLLExportFunc)
 {
 	ULONG image_base_address = find_image_base_address_by_peb(ProcessHandle);
 	PBYTE lpBuffer = new BYTE[BUFFER_SIZE];
@@ -300,7 +300,7 @@ NTSTATUS modify_import_table_inject(HANDLE ProcessHandle, DWORD ProcessIdentity,
 			memcpy(pbuf, original_import_descriptor, import_table_size);			//保存原始输入表
 			new_import_descriptor = (PIMAGE_IMPORT_DESCRIPTOR)(pbuf + import_table_size - sizeof(IMAGE_IMPORT_DESCRIPTOR));  //新的偏移位置，稍后填充,减去一个导入表描述的大小是因为IID数组以全0结构结束
 			pthunk_data = pbuf + new_import_table_size;		//构造Thunk等数据
-			memcpy((char*)(pthunk_data + 0x00), DllPath, (_tcslen(DllPath)+1)*2);   //从0x00处开始是DLL名称
+			memcpy((char*)(pthunk_data + 0x00), DllPath, (_tcslen(DllPath) + 1) * sizeof(TCHAR));   //从0x00处开始是DLL名称
 			import_by_name = (PIMAGE_IMPORT_BY_NAME)(pthunk_data + 0x20);			//在0x20处构造funcname
 			import_by_name->Hint = 0;    //按名称导入，这里直接填0即可
 			memcpy(import_by_name->Name, DLLExportFunc, (_tcslen(DLLExportFunc)+1)*sizeof(TCHAR));

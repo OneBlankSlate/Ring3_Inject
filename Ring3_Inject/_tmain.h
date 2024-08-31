@@ -43,14 +43,14 @@ SetWindowHookEx注入
 #define SETWINDOWHOOKEX  3
 #define REGISTER_INJECT  4
 #define MODIFY_IMPORT_TABLE_INJECT 5
-void inject(char* ImageName, char* flag, const wchar_t* DllPath);
+void inject(TCHAR* ImageName, TCHAR* flag, TCHAR* DllPath);
 
-void create_remote_thread(HANDLE ProcessHandle, DWORD ProcessIdentity, const wchar_t* DllPath);
-void apc_inject(HANDLE ProcessHandle, DWORD ProcessIdentity, const wchar_t* DllPath);
-void hook_eip_inject(HANDLE ProcessHandle, DWORD ProcessIdentity, const wchar_t* DllPath);
-void set_window_hookex_inject(HANDLE ProcessHandle, DWORD ProcessIdentity, const wchar_t* DllPath);
-BOOL register_inject(const wchar_t* DllPath);          //系统范围内的注入，无需进程句柄与ID
-NTSTATUS modify_import_table_inject(HANDLE ProcessHandle, DWORD ProcessIdentity, const wchar_t* DllPath, const TCHAR* DLLExportFunc);
+void create_remote_thread(HANDLE ProcessHandle, DWORD ProcessIdentity, TCHAR* DllPath);
+void apc_inject(HANDLE ProcessHandle, DWORD ProcessIdentity, TCHAR* DllPath);
+void hook_eip_inject(HANDLE ProcessHandle, DWORD ProcessIdentity, TCHAR* DllPath);
+void set_window_hookex_inject(HANDLE ProcessHandle, DWORD ProcessIdentity, TCHAR* DllPath);
+BOOL register_inject(TCHAR* DllPath);          //系统范围内的注入，无需进程句柄与ID
+NTSTATUS modify_import_table_inject(HANDLE ProcessHandle, DWORD ProcessIdentity, TCHAR* DllPath, const TCHAR* DLLExportFunc);
 ULONG  find_image_base_address_by_peb(HANDLE ProcessHandle);
 void release(PVOID lpAddress, HANDLE ThreadHandle, HANDLE ProcessHandle);
 
